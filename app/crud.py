@@ -1,3 +1,5 @@
+# app/crud.py (Versão Limpa e Final)
+
 from sqlalchemy.orm import Session
 from . import models, schemas, security
 
@@ -10,6 +12,8 @@ def get_user_by_email(db: Session, email: str):
 
 def create_user(db: Session, user: schemas.UserCreate):
     """ Cria um novo usuário com hash de senha. """
+    
+    # Simplesmente passa a senha (que agora é curta e segura) para o hashing
     hashed_password = security.get_password_hash(user.password)
     
     db_user = models.User(
@@ -26,6 +30,7 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 # ====================================================================
 # CLIENTES
+# ... (Funções de cliente e robôs permanecem as mesmas)
 # ====================================================================
 def get_client(db: Session, client_id: int):
     """ Busca um cliente pelo ID. """
