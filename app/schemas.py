@@ -1,12 +1,10 @@
-# app/schemas.py
-
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
+from fastapi.security import OAuth2PasswordBearer
 
 # ====================================================================
-# SCHEMAS BASE (Dados que podem ser lidos)
-# Usados para formatar a resposta da API (Response Model)
+# SCHEMAS BASE (Para leitura e saída)
 # ====================================================================
 
 class ApiKeyBase(BaseModel):
@@ -16,7 +14,7 @@ class ApiKeyBase(BaseModel):
     is_active: bool = True
     
     class Config:
-        from_attributes = True # Permite mapeamento de objetos ORM
+        from_attributes = True
 
 class RpaBotBase(BaseModel):
     code: str = Field(..., max_length=50)
@@ -44,32 +42,25 @@ class UserBase(BaseModel):
     class Config:
         from_attributes = True
 
-
 # ====================================================================
-# SCHEMAS DE CRIAÇÃO (Dados de entrada para POST/PUT)
+# SCHEMAS DE CRIAÇÃO (Entrada)
 # ====================================================================
 
-# Schemas de Criação de Usuário
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6)
     client_id: Optional[int] = None
 
-# Schemas de Criação de Cliente
 class ClientCreate(ClientBase):
     pass
 
-# Schemas de Criação de Robô
 class RpaBotCreate(RpaBotBase):
     client_id: int
 
-# Schemas de Criação de ApiKey
 class ApiKeyCreate(ApiKeyBase):
     client_id: Optional[int] = None
 
-
 # ====================================================================
-# SCHEMAS COMPLETOS (Incluindo IDs e Relacionamentos)
-# Usados para representar o objeto completo na saída
+# SCHEMAS COMPLETOS (Saída e Relações)
 # ====================================================================
 
 class ApiKey(ApiKeyBase):
@@ -83,7 +74,8 @@ class RpaBot(RpaBotBase):
 class User(UserBase):
     id: int
     client_id: Optional[int] = None
-    bots: List[RpaBot] = [] # Opcional, se quisermos carregar todos os robôs do cliente
+    # Adicionando relacionamento para evitar circular dependency, se necessário
+    # bots: List[RpaBot] = [] 
 
 class Client(ClientBase):
     id: int
@@ -93,19 +85,16 @@ class Client(ClientBase):
     users: List[User] = []
     bots: List[RpaBot] = []
 
-# app/schemas.py (Adicionado ao final do arquivo)
-# ... (restante do código schemas.py)
 
-from fastapi.security import OAuth2PasswordBearer
-
-# Esquema para o token retornado após o login
+# ====================================================================
+# SCHEMAS DE AUTENTICAÇÃO JWT
+# ====================================================================
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-# Esquema para os dados contidos no token (payload)
 class TokenData(BaseModel):
     email: Optional[str] = None
-
-# Configuração do esquema de segurança OAuth2
+    
+# Configuração do esquema de segurança OAuth2 (Usado nas rotas)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
