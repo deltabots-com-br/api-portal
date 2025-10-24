@@ -9,9 +9,25 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 from app import models, schemas, crud, database, security
+from app.database import engine # Importa o engine para usar nos metadados
 
 # Carrega variáveis de ambiente
 load_dotenv()
+
+# ====================================================================
+# CORREÇÃO CRÍTICA DE ORM: Forçar o carregamento de metadados no início
+# Isso resolve o erro 'NoReferencedTableError' em ambientes de deploy.
+# ====================================================================
+try:
+    print("Tentando carregar metadados do DB...")
+    # Tenta carregar todos os modelos definidos no 'Base' do SQLAlchemy
+    models.Base.metadata.create_all(bind=engine, checkfirst=True)
+    print("Metadados carregados com sucesso.")
+except Exception as e:
+    # Se falhar, é geralmente um erro de conexão. O app deve continuar, mas as rotas DB falharão.
+    print(f"AVISO: Falha ao carregar metadados do ORM (Pode ser ignorado se as tabelas já existirem): {e}")
+# ====================================================================
+
 
 app = FastAPI(
     title="Deltabots Management API",
@@ -80,7 +96,6 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
         
-    # Gera o token, lendo o tempo de expiração do .env
     access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60)))
     
     access_token = security.create_access_token(
@@ -104,11 +119,9 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
             detail="O setup já foi executado. Clientes/Usuários devem ser criados via rotas CRUD."
         )
 
-    # 1. Cria o cliente padrão
     client_data = schemas.ClientCreate(name="Deltabots Internal", status="Active")
     db_client = crud.create_client(db, client_data)
     
-    # 2. Cria o usuário Superadmin
     superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
     superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "SuperSecurePassword123!")
     
@@ -121,7 +134,6 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     )
     db_user = crud.create_user(db, user_data)
     
-    # 3. Atualiza o cliente para apontar para o usuário de contato
     db_client.contact_user_id = db_user.id
     db.commit()
     
@@ -135,11 +147,9 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO DA SINTAXE: Dependências sem valor padrão devem vir antes das com valor padrão
-    admin: Annotated[models.User, Depends(is_super_admin)] = None # Adiciona default para corrigir a ordem
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
-    # O 'admin' será injetado e a dependência is_super_admin verificará o acesso.
     db_client = crud.create_client(db, client=client)
     return db_client
 
@@ -152,7 +162,6 @@ def read_clients(skip: int = 0, limit: int = 100,
     if user.role == 'superadmin':
         clients = crud.get_clients(db, skip=skip, limit=limit)
     else:
-        # Client Admin só pode ver o seu próprio cliente
         client = crud.get_client(db, client_id=user.client_id)
         clients = [client] if client else []
         
@@ -166,7 +175,6 @@ def read_clients(skip: int = 0, limit: int = 100,
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO DA SINTAXE: Adiciona default para corrigir a ordem do Python
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
@@ -184,7 +192,6 @@ def read_bot_by_code(code: str,
     if bot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robô não encontrado")
         
-    # Se não for Super Admin, verifica se o robô pertence ao cliente do usuário
     if user.role != 'superadmin' and bot.client_id != user.client_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: O robô não pertence ao seu cliente.")
         
