@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary # Driver PostgreSQL
+python-dotenv
+pydantic[email]
+passlib[bcrypt] # Para hashing de senha
+requests # Para consumir a API de Logs (futuramente)
