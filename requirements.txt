@@ -1,19 +1,16 @@
 # requirements.txt
-#
-# Dependências do FastAPI e do Uvicorn
+
 fastapi
 uvicorn[standard]
-python-multipart 
-
-# Dependências de Segurança
-python-dotenv  
-python-jose[cryptography] 
-passlib[bcrypt] 
-# Note: Removido 'bcrypt' como linha separada para evitar conflitos, confiando no passlib[bcrypt]
-
-# Dependências de Banco de Dados
 sqlalchemy
-psycopg2-binary 
-
-# Dependência para consumo da API de Logs
+psycopg2-binary
+python-dotenv
+pydantic # <-- Deixe pydantic simples
+passlib[bcrypt]
 requests
+python-jose
+cryptography
+python-multipart
+
+# CORREÇÃO: Adiciona explicitamente a biblioteca que estava faltando
+email-validator
