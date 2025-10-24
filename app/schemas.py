@@ -1,3 +1,5 @@
+# app/schemas.py
+
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
@@ -14,7 +16,7 @@ class ApiKeyBase(BaseModel):
     is_active: bool = True
     
     class Config:
-        from_attributes = True
+        from_attributes = True 
 
 class RpaBotBase(BaseModel):
     code: str = Field(..., max_length=50)
@@ -74,16 +76,12 @@ class RpaBot(RpaBotBase):
 class User(UserBase):
     id: int
     client_id: Optional[int] = None
-    # Adicionando relacionamento para evitar circular dependency, se necessário
-    # bots: List[RpaBot] = [] 
 
 class Client(ClientBase):
     id: int
     contact_user_id: Optional[int] = None
     
-    # Relações aninhadas (para leitura)
-    users: List[User] = []
-    bots: List[RpaBot] = []
+# Os relacionamentos aninhados nos Schemas foram removidos na fase de depuração para estabilidade.
 
 
 # ====================================================================
@@ -96,5 +94,15 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
     
-# Configuração do esquema de segurança OAuth2 (Usado nas rotas)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+# ====================================================================
+# NOVOS: SCHEMAS DE LOGS EXTERNOS
+# ====================================================================
+
+class RpaLogResponse(BaseModel):
+    status: str
+    total_resultados: int
+    # Usamos 'dict' aqui porque a estrutura do log externo é variável (JSON)
+    logs: List[dict]
