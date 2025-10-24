@@ -1,11 +1,8 @@
-# app/security.py (Atualizado)
-
 import os
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# Adicione estas importações (se ainda não as fez no topo do arquivo)
 from jose import JWTError, jwt
 from dotenv import load_dotenv
 
@@ -19,7 +16,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 # Define o algoritmo de hashing de senha
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# --- Funções de Hashing de Senha (Já existentes) ---
+# --- Funções de Hashing de Senha ---
 
 def verify_password(plain_password, hashed_password):
     """ Verifica se a senha em texto puro corresponde ao hash armazenado. """
@@ -29,7 +26,7 @@ def get_password_hash(password):
     """ Retorna o hash bcrypt de uma senha em texto puro. """
     return pwd_context.hash(password)
 
-# --- Funções de Token JWT (NOVAS) ---
+# --- Funções de Token JWT ---
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """ Cria um novo JWT Access Token. """
