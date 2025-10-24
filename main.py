@@ -4,7 +4,7 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-# REMOVIDO: Importações JWT/OAuth2
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import requests 
@@ -18,7 +18,6 @@ load_dotenv()
 # ====================================================================
 # CRÍTICO: Variáveis de Chave Permanente
 # ====================================================================
-# A chave de API permanente deve ser inserida nas ENVs do EasyPanel
 SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA")
 SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
 # ====================================================================
@@ -53,7 +52,7 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
         if user and user.role == 'superadmin':
             return user
         
-    # Se fosse para clientes (API Keys na tabela api_keys), a lógica seria aqui
+    # Implementar lógica para chaves de clientes aqui, se necessário
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -92,7 +91,6 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     """ 
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
     """
-    # Esta é a lógica que estava retornando 400 Bad Request
     if crud.get_clients(db, limit=1):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -127,8 +125,8 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # Protegido: Apenas Super Admin pode criar
-    admin: Annotated[models.User, Depends(is_super_admin)] 
+    # CORREÇÃO: Adicionamos '= None' para resolver o SyntaxError
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
     db_client = crud.create_client(db, client=client)
@@ -137,15 +135,13 @@ def create_client(
 @app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 # Protegido: Autentica com API Key
-                 user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+                 user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
 ):
     """ Lista todos os clientes (Super Admin vê todos, outros perfis só veem seus dados). """
     
     if user.role == 'superadmin':
         clients = crud.get_clients(db, skip=skip, limit=limit)
     else:
-        # Se for autenticado (Client Admin), retorna apenas o seu cliente
         client = crud.get_client(db, client_id=user.client_id)
         clients = [client] if client else []
         
@@ -159,7 +155,8 @@ def read_clients(skip: int = 0, limit: int = 100,
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)] 
+    # CORREÇÃO: Adicionamos '= None' para resolver o SyntaxError
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
     db_bot = crud.create_bot(db, bot=bot)
@@ -168,7 +165,7 @@ def create_rpa_bot(
 @app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
 def read_bot_by_code(code: str, 
                      db: Session = Depends(database.get_db), 
-                     user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+                     user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
 ):
     """ Busca um robô pelo código (Rastreabilidade). """
     
@@ -192,7 +189,7 @@ def get_rpa_logs(
     data_inicio: Optional[str] = None, 
     data_fim: Optional[str] = None,
     db: Session = Depends(database.get_db), 
-    user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+    user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
 ):
     """ 
     Consulta logs na API Externa de Logs (Flask/MongoDB). 
