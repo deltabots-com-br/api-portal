@@ -4,7 +4,6 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-# IMPORTAR O FORMULÁRIO DE LOGIN (NECESSÁRIO AGORA)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -41,7 +40,7 @@ app = FastAPI(
 )
 
 # ====================================================================
-# DEPENDÊNCIAS DE SEGURANÇA (MÉTODO 1: API KEY SUPER ADMIN)
+# DEPENDÊNCIAS DE SEGURANÇA (API KEY SUPER ADMIN)
 # ====================================================================
 
 async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
@@ -64,7 +63,7 @@ async def is_super_admin(current_user: Annotated[models.User, Depends(get_curren
     return current_user 
 
 # ====================================================================
-# DEPENDÊNCIAS DE SEGURANÇA (MÉTODO 2: LOGIN/SENHA JWT CLIENTE)
+# DEPENDÊNCIAS DE SEGURANÇA (LOGIN/SENHA JWT CLIENTE)
 # ====================================================================
 
 async def get_current_user_by_jwt(token: Annotated[str, Depends(schemas.oauth2_scheme)], db: Session = Depends(database.get_db)):
@@ -99,7 +98,7 @@ def read_root():
 # ====================================================================
 # 2. ROTA DE AUTENTICAÇÃO (LOGIN DO CLIENTE)
 # ====================================================================
-@app.post("/token", response_model=schemas.Token, tags=["Auth (Cliente)"])
+@app.post("/token", response_model=schemas.Token, tags=["Auth (Cliente Frontend)"])
 def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(database.get_db)):
     """ 
     Autentica um usuário (Cliente) e retorna um JWT Access Token. 
@@ -209,16 +208,30 @@ def read_bot_by_code(code: str,
     return bot
 
 # ====================================================================
-# 6. ROTA DE CONSULTA DE LOGS (Frontend do Cliente)
+# 6. ROTAS DO CLIENTE (Frontend)
 # ====================================================================
 
-@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA (Cliente)"])
+@app.get("/me/bots", response_model=List[schemas.RpaBot], tags=["Dashboard (Cliente Frontend)"])
+def get_my_bots(
+    db: Session = Depends(database.get_db),
+    user: Annotated[models.User, Depends(get_current_user_by_jwt)] = None
+):
+    """ Retorna a lista de robôs associados ao cliente do token JWT. """
+    if user.client_id is None:
+        if user.role == 'superadmin':
+             # Superadmin logado via JWT pode ver todos os robôs
+            return crud.get_all_bots(db) 
+        return [] 
+        
+    bots = crud.get_bots_by_client(db, client_id=user.client_id)
+    return bots
+
+@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Dashboard (Cliente Frontend)"])
 def get_rpa_logs(
     robo_codigo: str, 
     data_inicio: Optional[str] = None, 
     data_fim: Optional[str] = None,
     db: Session = Depends(database.get_db), 
-    # Protegido: Autentica com JWT (Token de Login do Cliente)
     user: Annotated[models.User, Depends(get_current_user_by_jwt)] = None 
 ):
     """ 
@@ -232,9 +245,9 @@ def get_rpa_logs(
         if not bot or bot.client_id != user.client_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
 
-    # 2. PREPARAR CHAMADA EXTERNA (A API de Gestão chama a API de Logs)
+    # 2. PREPARAR CHAMADA EXTERNA
     base_url = os.getenv("LOG_API_BASE_URL")
-    api_key = os.getenv("LOG_API_KEY") # A chave permanente da API de Logs
+    api_key = os.getenv("LOG_API_KEY")
     endpoint = f"{base_url}/logs" 
     
     params = {"robo_codigo": robo_codigo}
