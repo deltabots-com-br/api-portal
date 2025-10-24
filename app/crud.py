@@ -1,4 +1,4 @@
-# app/crud.py
+# app/crud.py (Correção Final do Lookup)
 
 from sqlalchemy.orm import Session
 from . import models, schemas, security
@@ -8,8 +8,12 @@ from . import models, schemas, security
 # ====================================================================
 def get_user_by_email(db: Session, email: str):
     """ Busca um usuário pelo email. """
-    # Esta query agora funcionará, pois o ORM está mapeado corretamente
-    return db.query(models.User).filter(models.User.email == email).first()
+    
+    # CORREÇÃO: Limpa o email recebido (da ENV ou do form) 
+    # antes de fazer a query, para remover espaços invisíveis.
+    clean_email = email.strip()
+    
+    return db.query(models.User).filter(models.User.email == clean_email).first()
 
 def create_user(db: Session, user: schemas.UserCreate):
     """ Cria um novo usuário com hash de senha. """
@@ -18,7 +22,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = security.get_password_hash(user.password)
     
     db_user = models.User(
-        email=user.email,
+        email=user.email.strip(), # Garante que o email salvo também esteja limpo
         name=user.name,
         password=hashed_password, # Nome da coluna no DB
         role=user.role,
@@ -30,10 +34,8 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 # ====================================================================
-# CLIENTES e ROBÔS (Restante do CRUD)
+# CLIENTES
 # ====================================================================
-
-# ... (Restante do código CRUD permanece o mesmo) ...
 def get_client(db: Session, client_id: int):
     """ Busca um cliente pelo ID. """
     return db.query(models.Client).filter(models.Client.id == client_id).first()
@@ -50,6 +52,9 @@ def create_client(db: Session, client: schemas.ClientCreate):
     db.refresh(db_client)
     return db_client
 
+# ====================================================================
+# ROBÔS RPA
+# ====================================================================
 def get_bots_by_client(db: Session, client_id: int, skip: int = 0, limit: int = 100):
     """ Lista os robôs de um cliente específico. """
     return db.query(models.RpaBot).filter(models.RpaBot.client_id == client_id).offset(skip).limit(limit).all()
