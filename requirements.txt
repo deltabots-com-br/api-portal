@@ -1,4 +1,4 @@
-# requirements.txt (Versão Final com Correções Explícitas)
+# requirements.txt (Versão FINAL E COMPLETA)
 
 fastapi
 uvicorn[standard]
@@ -6,11 +6,11 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 pydantic
-passlib[bcrypt]
 requests
 python-jose
 cryptography
 python-multipart
 
-# CORREÇÃO CRÍTICA: Instala explicitamente a dependência que Pydantic exige
-email-validator
+# CORREÇÕES DE SEGURANÇA E VALIDAÇÃO (CRÍTICAS)
+passlib[bcrypt]    # <--- O pacote principal que estava faltando
+email-validator    # <--- A biblioteca que o Pydantic exige para EmailStr
