@@ -1,7 +1,7 @@
 # main.py
 
 import os
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -80,8 +80,8 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
         
-    # Gera o token, lendo o tempo de expiração do .env (ou 30min default)
-    access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30)))
+    # Gera o token, lendo o tempo de expiração do .env
+    access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60)))
     
     access_token = security.create_access_token(
         data={"email": user.email, "role": user.role},
@@ -97,7 +97,6 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
 def create_initial_admin(db: Session = Depends(database.get_db)):
     """ 
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
-    Use as variáveis SUPERADMIN_EMAIL e SUPERADMIN_PASSWORD do .env
     """
     if crud.get_clients(db, limit=1):
         raise HTTPException(
@@ -133,17 +132,21 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 # 4. ROTAS DE GESTÃO DE CLIENTES
 # ====================================================================
 @app.post("/clients/", response_model=schemas.Client, tags=["Gestão: Clientes"])
-def create_client(client: schemas.ClientCreate, 
-                  db: Session = Depends(database.get_db), 
-                  admin: Annotated[models.User, Depends(is_super_admin)]):
+def create_client(
+    client: schemas.ClientCreate, 
+    db: Session = Depends(database.get_db),
+    # CORREÇÃO DA SINTAXE: Dependências sem valor padrão devem vir antes das com valor padrão
+    admin: Annotated[models.User, Depends(is_super_admin)] = None # Adiciona default para corrigir a ordem
+):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
+    # O 'admin' será injetado e a dependência is_super_admin verificará o acesso.
     db_client = crud.create_client(db, client=client)
     return db_client
 
 @app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 user: Annotated[models.User, Depends(get_current_user)]):
+                 user: Annotated[models.User, Depends(get_current_user)] = None):
     """ Lista todos os clientes (Super Admin vê todos, Client Admin vê apenas o seu). """
     
     if user.role == 'superadmin':
@@ -160,9 +163,12 @@ def read_clients(skip: int = 0, limit: int = 100,
 # ====================================================================
 
 @app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
-def create_rpa_bot(bot: schemas.RpaBotCreate, 
-                  db: Session = Depends(database.get_db), 
-                  admin: Annotated[models.User, Depends(is_super_admin)]):
+def create_rpa_bot(
+    bot: schemas.RpaBotCreate, 
+    db: Session = Depends(database.get_db),
+    # CORREÇÃO DA SINTAXE: Adiciona default para corrigir a ordem do Python
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
+):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
     db_bot = crud.create_bot(db, bot=bot)
     return db_bot
@@ -170,7 +176,7 @@ def create_rpa_bot(bot: schemas.RpaBotCreate,
 @app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
 def read_bot_by_code(code: str, 
                      db: Session = Depends(database.get_db), 
-                     user: Annotated[models.User, Depends(get_current_user)]):
+                     user: Annotated[models.User, Depends(get_current_user)] = None):
     """ Busca um robô pelo código (Rastreabilidade). """
     
     bot = crud.get_bot_by_code(db, code=code)
