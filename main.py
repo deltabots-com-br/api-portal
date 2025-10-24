@@ -4,6 +4,7 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
+# A linha abaixo (OAuth2PasswordRequestForm) não é mais necessária, mas não causa erro.
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
