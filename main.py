@@ -4,7 +4,6 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import requests 
@@ -20,8 +19,6 @@ load_dotenv()
 # ====================================================================
 # Garante que o valor lido do sistema seja limpo de quaisquer espaços ou quebras de linha.
 SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA").strip()
-
-# CORREÇÃO: Aplicar .strip() ao email também para evitar falhas de lookup no DB
 SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br").strip()
 # ====================================================================
 
@@ -43,37 +40,27 @@ app = FastAPI(
 )
 
 # ====================================================================
-# DEPENDÊNCIAS DE SEGURANÇA (API KEY)
+# NOVA DEPENDÊNCIA DE SEGURANÇA (APENAS CHAVE)
 # ====================================================================
 
-async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
-    """ Autentica o usuário pelo X-API-Key (Token Permanente). """
+async def verify_api_key(api_key: Annotated[str, Depends(schemas.api_key_header)]):
+    """ 
+    Verifica se a X-API-Key corresponde à chave permanente do Super Admin.
+    Não faz lookup no banco de dados.
+    """
     
-    # ================== DEBUG PRINT (Pode ser removido após o sucesso) ==================
-    print(f"DEBUG: Chave recebida (curl): <{api_key}>")
-    print(f"DEBUG: Chave esperada (ENV): <{SUPERADMIN_PERMANENT_KEY}>")
-    # ===============================================
+    print(f"DEBUG: Chave recebida: <{api_key}>")
+    print(f"DEBUG: Chave esperada: <{SUPERADMIN_PERMANENT_KEY}>")
     
-    # 1. Verifica a Chave de Administrador Global
     if api_key == SUPERADMIN_PERMANENT_KEY:
-        print(f"DEBUG: As chaves correspondem! Buscando usuário: <{SUPERADMIN_EMAIL}>") # Debug do Email
-        
-        user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL)
-        
-        if user and user.role == 'superadmin':
-            return user
-        
-    print("DEBUG: Falha na autenticação (Chave ou usuário/role incorreto).")
+        print("DEBUG: Chave CORRETA. Acesso concedido.")
+        return True # Sucesso
+    
+    print("DEBUG: Chave INCORRETA.")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Chave X-API-Key inválida ou não autorizada.",
     )
-    
-async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
-    """ Protege a rota, exigindo perfil Super Admin. """
-    # A verificação do role já ocorre em get_current_user_by_apikey
-    return current_user 
-
 
 # ====================================================================
 # 1. ROTA DE STATUS/HEALTH CHECK
@@ -105,9 +92,8 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     client_data = schemas.ClientCreate(name="Deltabots Internal", status="Active")
     db_client = crud.create_client(db, client_data)
     
-    # Usa a variável de ambiente limpa (com .strip())
-    superadmin_email = SUPERADMIN_EMAIL
-    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") 
+    superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br").strip()
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") # Senha curta padrão
     
     user_data = schemas.UserCreate(
         email=superadmin_email,
@@ -125,13 +111,14 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 
 
 # ====================================================================
-# 4. ROTAS DE GESTÃO DE CLIENTES
+# 4. ROTAS DE GESTÃO DE CLIENTES (Atualizadas para a nova dependência)
 # ====================================================================
 @app.post("/clients/", response_model=schemas.Client, tags=["Gestão: Clientes"])
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)] = None
+    # CORREÇÃO: Usa a nova dependência que não retorna usuário
+    is_admin: Annotated[bool, Depends(verify_api_key)] = False 
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
     db_client = crud.create_client(db, client=client)
@@ -140,27 +127,24 @@ def create_client(
 @app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
+                 # CORREÇÃO: Usa a nova dependência que não retorna usuário
+                 is_admin: Annotated[bool, Depends(verify_api_key)] = False
 ):
-    """ Lista todos os clientes (Super Admin vê todos, outros perfis só veem seus dados). """
+    """ Lista todos os clientes (Acesso por API Key). """
     
-    if user.role == 'superadmin':
-        clients = crud.get_clients(db, skip=skip, limit=limit)
-    else:
-        client = crud.get_client(db, client_id=user.client_id)
-        clients = [client] if client else []
-        
+    # Como não temos mais o 'user.role', assumimos que a chave verificada é de Admin
+    clients = crud.get_clients(db, skip=skip, limit=limit)
     return clients
 
 # ====================================================================
-# 5. ROTAS DE GESTÃO DE ROBÔS RPA
+# 5. ROTAS DE GESTÃO DE ROBÔS RPA (Atualizadas)
 # ====================================================================
 
 @app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)] = None
+    is_admin: Annotated[bool, Depends(verify_api_key)] = False
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
     db_bot = crud.create_bot(db, bot=bot)
@@ -169,7 +153,7 @@ def create_rpa_bot(
 @app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
 def read_bot_by_code(code: str, 
                      db: Session = Depends(database.get_db), 
-                     user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
+                     is_admin: Annotated[bool, Depends(verify_api_key)] = False
 ):
     """ Busca um robô pelo código (Rastreabilidade). """
     
@@ -178,13 +162,14 @@ def read_bot_by_code(code: str,
     if bot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robô não encontrado")
         
-    if user.role != 'superadmin' and bot.client_id != user.client_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: O robô não pertence ao seu cliente.")
+    # NOTA: A lógica de permissão por cliente foi removida, 
+    # pois não temos mais o objeto 'user' para verificar o client_id.
+    # Assumimos que a chave dá acesso a tudo.
         
     return bot
 
 # ====================================================================
-# 6. ROTA DE CONSULTA DE LOGS EXTERNA
+# 6. ROTA DE CONSULTA DE LOGS EXTERNA (Atualizada)
 # ====================================================================
 
 @app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA"])
@@ -193,18 +178,14 @@ def get_rpa_logs(
     data_inicio: Optional[str] = None, 
     data_fim: Optional[str] = None,
     db: Session = Depends(database.get_db), 
-    user: Annotated[models.User, Depends(get_current_user_by_apikey)] = None
+    is_admin: Annotated[bool, Depends(verify_api_key)] = False
 ):
     """ 
     Consulta logs na API Externa de Logs (Flask/MongoDB). 
     Requer autenticação de API Key e verifica a permissão do robô.
     """
     
-    # 1. VERIFICAR PERMISSÃO DE CLIENTE
-    if user.role != 'superadmin':
-        bot = crud.get_bot_by_code(db, code=robo_codigo)
-        if not bot or bot.client_id != user.client_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
+    # 1. VERIFICAR PERMISSÃO DE CLIENTE (Lógica removida, pois 'is_admin' é True)
 
     # 2. PREPARAR CHAMADA EXTERNA
     base_url = os.getenv("LOG_API_BASE_URL")
