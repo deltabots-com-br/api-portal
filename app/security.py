@@ -11,19 +11,34 @@ load_dotenv()
 # Configurações JWT lidas do .env
 SECRET_KEY = os.getenv("SECRET_KEY", "chave_secreta_default_insegura")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 
 # Define o algoritmo de hashing de senha
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# --- Lógica de Truncamento (Correção do ValueError) ---
+BCRYPT_MAX_LENGTH = 72 
+
+def _truncate_password(password: str) -> str:
+    """ 
+    Trunca a senha em bytes para garantir que não exceda o limite do bcrypt (72 bytes).
+    Isso é uma correção de segurança para o bug de ambiente.
+    """
+    # Codifica para bytes, trunca, e decodifica de volta para string
+    return password.encode('utf-8')[:BCRYPT_MAX_LENGTH].decode('utf-8', 'ignore')
 
 # --- Funções de Hashing de Senha ---
 
 def verify_password(plain_password, hashed_password):
     """ Verifica se a senha em texto puro corresponde ao hash armazenado. """
+    # Trunca a senha de entrada antes de verificar o hash
+    plain_password = _truncate_password(plain_password)
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
     """ Retorna o hash bcrypt de uma senha em texto puro. """
+    # APLICAR TRUNCAMENTO ANTES DO HASHING
+    password = _truncate_password(password)
     return pwd_context.hash(password)
 
 # --- Funções de Token JWT ---
