@@ -48,14 +48,21 @@ app = FastAPI(
 async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
     """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
+    # ================== DEBUG PRINT ==================
+    # Vamos imprimir as chaves para ver por que a comparação falha
+    # Adicionamos delimitadores '<' e '>' para ver espaços em branco
+    print(f"DEBUG: Chave recebida (curl): <{api_key}>")
+    print(f"DEBUG: Chave esperada (ENV): <{SUPERADMIN_PERMANENT_KEY}>")
+    # ===============================================
+    
     # 1. Verifica a Chave de Administrador Global
     if api_key == SUPERADMIN_PERMANENT_KEY:
+        print("DEBUG: As chaves correspondem! Buscando usuário...")
         user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL)
         if user and user.role == 'superadmin':
             return user
         
-    # Implementar lógica para chaves de clientes aqui, se necessário
-    
+    print("DEBUG: Falha na autenticação (Chave ou usuário/role incorreto).")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Chave X-API-Key inválida ou não autorizada.",
@@ -126,7 +133,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO: Adicionado '= None' para resolver o SyntaxError
+    # CORREÇÃO SINTÁTICA (linha 131)
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
@@ -156,7 +163,7 @@ def read_clients(skip: int = 0, limit: int = 100,
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO: Adicionado '= None' para resolver o SyntaxError
+    # CORREÇÃO SINTÁTICA
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
