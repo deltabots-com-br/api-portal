@@ -1,4 +1,5 @@
-# requirements.txt
+# requirements.txt (Versão Final com Correções Explícitas)
+
 fastapi
 uvicorn[standard]
 sqlalchemy
@@ -11,6 +12,5 @@ python-jose
 cryptography
 python-multipart
 
-# Adicionadas explicitamente para resolver o ImportError e o ValueError
-email-validator 
-bcrypt
+# CORREÇÃO CRÍTICA: Instala explicitamente a dependência que Pydantic exige
+email-validator
