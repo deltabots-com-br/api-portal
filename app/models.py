@@ -1,47 +1,29 @@
+# app/models.py (Versão FINAL - Reorganizada para evitar Referência)
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, func
-# Importa relationship, mas não o usa mais nas classes
 from sqlalchemy.orm import relationship 
 from .database import Base
 
 # ====================================================================
-# 1. CLIENT MODEL
+# Classes SEM FKs de saída (definidas primeiro)
 # ====================================================================
-class Client(Base):
-    __tablename__ = "clients"
-    __table_args__ = {'schema': 'public'} 
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(150), unique=True, nullable=False)
-    contact_user_id = Column(Integer, unique=True, nullable=True) 
-    status = Column(String(20), default="Active", nullable=False)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-
-
-# ====================================================================
-# 2. USER MODEL
-# ====================================================================
-class User(Base):
-    __tablename__ = "users"
+# 1. API KEY MODEL
+class ApiKey(Base):
+    __tablename__ = "api_keys"
     __table_args__ = {'schema': 'public'}
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(150), unique=True, index=True, nullable=False)
-    password = Column(String(255), nullable=False) 
-    role = Column(String(50), default="client_admin", nullable=False)
-    
-    # Mantém a Foreign Key para integridade do DB
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True) 
-    
+    key_value = Column(String(255), unique=True, nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True) 
+    purpose = Column(String(100), nullable=False)
+    expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
-# ====================================================================
-# 3. RPA BOT MODEL
-# ====================================================================
+# 2. RPA BOT MODEL
 class RpaBot(Base):
     __tablename__ = "rpa_bots"
     __table_args__ = {'schema': 'public'} 
@@ -58,17 +40,38 @@ class RpaBot(Base):
 
 
 # ====================================================================
-# 4. API KEY MODEL
+# Classes com FKs de entrada (definidas por último)
 # ====================================================================
-class ApiKey(Base):
-    __tablename__ = "api_keys"
+
+# 3. CLIENT MODEL
+class Client(Base):
+    __tablename__ = "clients"
+    __table_args__ = {'schema': 'public'} 
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(150), unique=True, nullable=False)
+    contact_user_id = Column(Integer, unique=True, nullable=True) 
+    status = Column(String(20), default="Active", nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# 4. USER MODEL
+class User(Base):
+    __tablename__ = "users"
     __table_args__ = {'schema': 'public'}
 
     id = Column(Integer, primary_key=True, index=True)
-    key_value = Column(String(255), unique=True, nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True) 
-    purpose = Column(String(100), nullable=False)
-    expires_at = Column(DateTime, nullable=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(150), unique=True, index=True, nullable=False)
+    password = Column(String(255), nullable=False) 
+    role = Column(String(50), default="client_admin", nullable=False)
+    
+    # FK para clients
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True) 
+    
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    
+# OBS: O erro de FK (NoReferencedTableError) sumirá porque 'clients' é definida antes de 'users'.
