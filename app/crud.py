@@ -1,5 +1,3 @@
-# app/crud.py
-
 from sqlalchemy.orm import Session
 from . import models, schemas, security
 
@@ -12,7 +10,6 @@ def get_user_by_email(db: Session, email: str):
 
 def create_user(db: Session, user: schemas.UserCreate):
     """ Cria um novo usuário com hash de senha. """
-    # Hash da senha antes de salvar
     hashed_password = security.get_password_hash(user.password)
     
     db_user = models.User(
@@ -53,6 +50,10 @@ def get_bots_by_client(db: Session, client_id: int, skip: int = 0, limit: int = 
     """ Lista os robôs de um cliente específico. """
     return db.query(models.RpaBot).filter(models.RpaBot.client_id == client_id).offset(skip).limit(limit).all()
 
+def get_bot_by_code(db: Session, code: str):
+    """ Busca um robô pelo código. """
+    return db.query(models.RpaBot).filter(models.RpaBot.code == code).first()
+
 def create_bot(db: Session, bot: schemas.RpaBotCreate):
     """ Cria um novo robô. """
     db_bot = models.RpaBot(
@@ -66,5 +67,3 @@ def create_bot(db: Session, bot: schemas.RpaBotCreate):
     db.commit()
     db.refresh(db_bot)
     return db_bot
-
-# OBS: Para a produção, você precisaria adicionar funções de UPDATE e DELETE para todas as entidades.
