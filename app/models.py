@@ -7,19 +7,20 @@ from .database import Base
 # ====================================================================
 class Client(Base):
     __tablename__ = "clients"
-    __table_args__ = {'schema': 'public'}
+    # Garante que o ORM procure a tabela no esquema 'public'
+    __table_args__ = {'schema': 'public'} 
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
-    # Contact user ID ainda não é uma FK no ORM, apenas no DB
     contact_user_id = Column(Integer, unique=True, nullable=True) 
     status = Column(String(20), default="Active", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
-    users = relationship("User", back_populates="client", foreign_keys="[User.client_id]") # <--- EXPLICITA FK
-    bots = relationship("RpaBot", back_populates="client")
-    api_keys = relationship("ApiKey", back_populates="client")
+    # CORREÇÃO: Usando strings para late binding
+    users = relationship("User", back_populates="client") 
+    bots = relationship("RpaBot", back_populates="client") 
+    api_keys = relationship("ApiKey", back_populates="client") 
 
 
 # ====================================================================
@@ -27,7 +28,7 @@ class Client(Base):
 # ====================================================================
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'schema': 'public'}
+    __table_args__ = {'schema': 'public'} 
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -35,15 +36,59 @@ class User(Base):
     password = Column(String(255), nullable=False) 
     role = Column(String(50), default="client_admin", nullable=False)
     
-    # A ÚLTIMA CORREÇÃO: Usar 'public.clients' minúsculo
+    # CRÍTICO: Especifica o schema 'public' na Foreign Key
     client_id = Column(Integer, ForeignKey("public.clients.id", ondelete="RESTRICT"), nullable=True) 
     
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
-    # Força a associação de volta (para evitar ambiguidade na configuração)
+    # CORREÇÃO: Usando string 'Client' e back_populates
     client = relationship("Client", back_populates="users", foreign_keys="[User.client_id]") 
 
 
-# ... (O restante dos modelos RpaBot e ApiKey deve usar o 'public.clients.id' no ForeignKey) ...
+# ====================================================================
+# 3. RPA BOT MODEL
+# ====================================================================
+class RpaBot(Base):
+    __tablename__ = "rpa_bots"
+    __table_args__ = {'schema': 'public'} 
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # CRÍTICO: Especifica o schema 'public' na Foreign Key
+    client_id = Column(Integer, ForeignKey("public.clients.id", ondelete="CASCADE"), nullable=False) 
+    
+    code = Column(String(50), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    system_target = Column(String(100), nullable=True)
+    status = Column(String(20), default="Deployed", nullable=False)
+    last_successful_run_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    # CORREÇÃO: Usando string 'Client'
+    client = relationship("Client", back_populates="bots")
+
+
+# ====================================================================
+# 4. API KEY MODEL
+# ====================================================================
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = {'schema': 'public'}
+
+    id = Column(Integer, primary_key=True, index=True)
+    key_value = Column(String(255), unique=True, nullable=False)
+    
+    # CRÍTICO: Especifica o schema 'public' na Foreign Key
+    client_id = Column(Integer, ForeignKey("public.clients.id", ondelete="SET NULL"), nullable=True) 
+    
+    purpose = Column(String(100), nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # CORREÇÃO: Usando string 'Client'
+    client = relationship("Client", back_populates="api_keys")
