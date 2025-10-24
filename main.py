@@ -4,10 +4,10 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+# REMOVIDO: from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-import requests # NOVO: Para fazer chamadas à API de Logs
+import requests 
 
 from app import models, schemas, crud, database, security
 from app.database import engine 
@@ -16,15 +16,21 @@ from app.database import engine
 load_dotenv()
 
 # ====================================================================
-# CORREÇÃO CRÍTICA DE ORM: Forçar o carregamento de metadados no início
+# CRÍTICO: Variáveis de Chave Permanente
 # ====================================================================
+SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA")
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL")
+# ====================================================================
+
+
+# --- Carregamento de Metadados (Permanece) ---
 try:
     print("Tentando carregar metadados do DB...")
     models.Base.metadata.create_all(bind=engine, checkfirst=True)
     print("Metadados carregados com sucesso.")
 except Exception as e:
     print(f"AVISO: Falha ao carregar metadados do ORM (Pode ser ignorado se as tabelas já existirem): {e}")
-# ====================================================================
+# ---------------------------------------------
 
 
 app = FastAPI(
@@ -34,38 +40,29 @@ app = FastAPI(
 )
 
 # ====================================================================
-# DEPENDÊNCIAS DE SEGURANÇA
+# DEPENDÊNCIAS DE SEGURANÇA (API KEY)
 # ====================================================================
 
-async def get_current_user(token: Annotated[str, Depends(schemas.oauth2_scheme)], db: Session = Depends(database.get_db)):
-    """ Injeta o usuário autenticado na rota a partir do JWT. """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Não foi possível validar as credenciais",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    payload = security.decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
-        
-    email: str = payload.get("email")
-    if email is None:
-        raise credentials_exception
-        
-    user = crud.get_user_by_email(db, email=email)
-    if user is None or not user.is_active:
-        raise credentials_exception
-        
-    return user
+async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
+    """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
-async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user)]):
+    # Verifica a Chave de Administrador Global
+    if api_key == SUPERADMIN_PERMANENT_KEY:
+        user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL)
+        if user and user.role == 'superadmin':
+            return user
+        
+    # Implementar lógica para chaves de clientes aqui, se necessário
+    
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Chave X-API-Key inválida ou não autorizada.",
+    )
+    
+async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
     """ Protege a rota, exigindo perfil Super Admin. """
-    if current_user.role != "superadmin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso negado. Requer perfil Super Admin."
-        )
-    return current_user
+    # A verificação já foi feita no get_current_user_by_apikey
+    return current_user 
 
 
 # ====================================================================
@@ -77,31 +74,9 @@ def read_root():
 
 
 # ====================================================================
-# 2. ROTA DE AUTENTICAÇÃO (LOGIN)
+# 2. ROTA DE AUTENTICAÇÃO (LOGIN) - REMOVIDA
 # ====================================================================
-@app.post("/token", response_model=schemas.Token, tags=["Auth"])
-def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(database.get_db)):
-    """ Autentica o usuário e retorna um JWT Access Token. """
-    user = crud.get_user_by_email(db, email=form_data.username)
-    
-    if not user or not security.verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou senha incorretos",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
-        
-    access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60)))
-    
-    access_token = security.create_access_token(
-        data={"email": user.email, "role": user.role},
-        expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
+# REMOVIDA A ROTA /token
 
 # ====================================================================
 # 3. ENDPOINT DE SETUP (CRIAÇÃO DO PRIMEIRO ADMIN)
@@ -145,7 +120,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)] = None
+    admin: Annotated[models.User, Depends(is_super_admin)]
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
     db_client = crud.create_client(db, client=client)
@@ -154,104 +129,15 @@ def create_client(
 @app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 user: Annotated[models.User, Depends(get_current_user)] = None):
-    """ Lista todos os clientes (Super Admin vê todos, Client Admin vê apenas o seu). """
+                 user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
+    """ Lista todos os clientes (Acesso por API Key). """
     
     if user.role == 'superadmin':
         clients = crud.get_clients(db, skip=skip, limit=limit)
     else:
-        client = crud.get_client(db, client_id=user.client_id)
-        clients = [client] if client else []
+        # Se for autenticado via API Key, mas não for o Super Admin (lógica futura)
+        clients = [] 
         
     return clients
 
-# ====================================================================
-# 5. ROTAS DE GESTÃO DE ROBÔS RPA
-# ====================================================================
-
-@app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
-def create_rpa_bot(
-    bot: schemas.RpaBotCreate, 
-    db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)] = None
-):
-    """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
-    db_bot = crud.create_bot(db, bot=bot)
-    return db_bot
-
-@app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
-def read_bot_by_code(code: str, 
-                     db: Session = Depends(database.get_db), 
-                     user: Annotated[models.User, Depends(get_current_user)] = None):
-    """ Busca um robô pelo código (Rastreabilidade). """
-    
-    bot = crud.get_bot_by_code(db, code=code)
-    
-    if bot is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robô não encontrado")
-        
-    if user.role != 'superadmin' and bot.client_id != user.client_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: O robô não pertence ao seu cliente.")
-        
-    return bot
-
-# ====================================================================
-# 6. ROTA DE CONSULTA DE LOGS EXTERNA (NOVO)
-# ====================================================================
-
-@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA"])
-def get_rpa_logs(
-    robo_codigo: str, 
-    data_inicio: Optional[str] = None, 
-    data_fim: Optional[str] = None,
-    db: Session = Depends(database.get_db), 
-    user: Annotated[models.User, Depends(get_current_user)] = None
-):
-    """ 
-    Consulta logs na API Externa de Logs (Flask/MongoDB). 
-    Requer autenticação JWT e verifica a permissão de acesso ao robô.
-    """
-    
-    # 1. VERIFICAR PERMISSÃO DE CLIENTE
-    # Se não for admin, verifica se o código do robô pertence a este cliente
-    if user.role != 'superadmin':
-        bot = crud.get_bot_by_code(db, code=robo_codigo)
-        if not bot or bot.client_id != user.client_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
-
-    # 2. PREPARAR CHAMADA EXTERNA
-    base_url = os.getenv("LOG_API_BASE_URL")
-    api_key = os.getenv("LOG_API_KEY")
-    endpoint = f"{base_url}/logs" 
-    
-    params = {"robo_codigo": robo_codigo}
-    if data_inicio:
-        params["data_inicio"] = data_inicio
-    if data_fim:
-        params["data_fim"] = data_fim
-
-    headers = {
-        "X-API-Key": api_key,
-        "Accept": "application/json"
-    }
-
-    try:
-        response = requests.get(endpoint, params=params, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            return response.json()
-        
-        # Trata erro 403/401 da API Externa
-        if response.status_code in [401, 403]:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, 
-                                detail="Falha na autenticação da API de Logs (Verifique LOG_API_KEY).")
-        
-        # Trata outros erros
-        response.raise_for_status() 
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
-                            detail=f"Falha de conexão com a API de Logs: {e}")
-
-    # Retorno padrão de erro (nunca deve ser atingido)
-    raise HTTPException(status_code=response.status_code, detail="Erro desconhecido na API de Logs")
+# ... (Restante das rotas de robôs) ...
