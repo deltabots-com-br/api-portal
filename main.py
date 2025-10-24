@@ -4,6 +4,8 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
+# NOVO: Importa o middleware de CORS
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -40,6 +42,26 @@ app = FastAPI(
 )
 
 # ====================================================================
+# CORREÇÃO: CONFIGURAÇÃO DE CORS (Cross-Origin Resource Sharing)
+# ====================================================================
+# Isso é OBRIGATÓRIO para que o seu frontend (portal.html) possa
+# chamar a API de outro domínio.
+origins = [
+    "*", # Permite todas as origens (mais fácil para depuração)
+    # Você pode restringir isso no futuro para o domínio do seu frontend
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # Permite GET, POST, etc.
+    allow_headers=["*"], # Permite "Authorization", "X-API-Key", etc.
+)
+# ====================================================================
+
+
+# ====================================================================
 # DEPENDÊNCIAS DE SEGURANÇA (API KEY SUPER ADMIN)
 # ====================================================================
 
@@ -47,8 +69,8 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
     """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
     if api_key == SUPERADMIN_PERMANENT_KEY:
-        hardcoded_email = "adrianooliveirasjc@gmail.com"
-        user = crud.get_user_by_email(db, email=hardcoded_email)
+        # CORREÇÃO: Usando o email limpo que definimos no topo
+        user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL) 
         
         if user and user.role == 'superadmin':
             return user
@@ -220,7 +242,7 @@ def get_my_bots(
     if user.client_id is None:
         if user.role == 'superadmin':
              # Superadmin logado via JWT pode ver todos os robôs
-            return crud.get_all_bots(db) 
+            return crud.get_all_bots(db) # (Necessário implementar crud.get_all_bots)
         return [] 
         
     bots = crud.get_bots_by_client(db, client_id=user.client_id)
@@ -247,7 +269,7 @@ def get_rpa_logs(
 
     # 2. PREPARAR CHAMADA EXTERNA
     base_url = os.getenv("LOG_API_BASE_URL")
-    api_key = os.getenv("LOG_API_KEY")
+    api_key = os.getenv("LOG_API_KEY") # A chave permanente da API de Logs
     endpoint = f"{base_url}/logs" 
     
     params = {"robo_codigo": robo_codigo}
@@ -278,3 +300,4 @@ def get_rpa_logs(
                             detail=f"Falha de conexão com a API de Logs: {e}")
 
     raise HTTPException(status_code=response.status_code, detail="Erro desconhecido na API de Logs")
+
