@@ -4,6 +4,8 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
+# IMPORTAR O FORMULÁRIO DE LOGIN (NECESSÁRIO AGORA)
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import requests 
@@ -17,13 +19,12 @@ load_dotenv()
 # ====================================================================
 # CRÍTICO: Variáveis de Chave Permanente
 # ====================================================================
-# Garante que o valor lido do sistema seja limpo de quaisquer espaços ou quebras de linha.
 SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA").strip()
 SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br").strip()
 # ====================================================================
 
 
-# --- Carregamento de Metadados (Permanece) ---
+# --- Carregamento de Metadados ---
 try:
     print("Tentando carregar metadados do DB...")
     models.Base.metadata.create_all(bind=engine, checkfirst=True)
@@ -40,27 +41,52 @@ app = FastAPI(
 )
 
 # ====================================================================
-# NOVA DEPENDÊNCIA DE SEGURANÇA (APENAS CHAVE)
+# DEPENDÊNCIAS DE SEGURANÇA (MÉTODO 1: API KEY SUPER ADMIN)
 # ====================================================================
 
-async def verify_api_key(api_key: Annotated[str, Depends(schemas.api_key_header)]):
-    """ 
-    Verifica se a X-API-Key corresponde à chave permanente do Super Admin.
-    Não faz lookup no banco de dados.
-    """
-    
-    print(f"DEBUG: Chave recebida: <{api_key}>")
-    print(f"DEBUG: Chave esperada: <{SUPERADMIN_PERMANENT_KEY}>")
+async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
+    """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
     if api_key == SUPERADMIN_PERMANENT_KEY:
-        print("DEBUG: Chave CORRETA. Acesso concedido.")
-        return True # Sucesso
-    
-    print("DEBUG: Chave INCORRETA.")
+        hardcoded_email = "adrianooliveirasjc@gmail.com"
+        user = crud.get_user_by_email(db, email=hardcoded_email)
+        
+        if user and user.role == 'superadmin':
+            return user
+        
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Chave X-API-Key inválida ou não autorizada.",
     )
+    
+async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
+    """ Protege a rota, exigindo perfil Super Admin (API KEY). """
+    return current_user 
+
+# ====================================================================
+# DEPENDÊNCIAS DE SEGURANÇA (MÉTODO 2: LOGIN/SENHA JWT CLIENTE)
+# ====================================================================
+
+async def get_current_user_by_jwt(token: Annotated[str, Depends(schemas.oauth2_scheme)], db: Session = Depends(database.get_db)):
+    """ Injeta o usuário (Cliente) autenticado na rota a partir do JWT. """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Não foi possível validar as credenciais (Token JWT)",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = security.decode_access_token(token)
+    if payload is None:
+        raise credentials_exception
+        
+    email: str = payload.get("email")
+    if email is None:
+        raise credentials_exception
+        
+    user = crud.get_user_by_email(db, email=email)
+    if user is None or not user.is_active:
+        raise credentials_exception
+        
+    return user
 
 # ====================================================================
 # 1. ROTA DE STATUS/HEALTH CHECK
@@ -71,14 +97,39 @@ def read_root():
 
 
 # ====================================================================
-# 2. ROTA DE AUTENTICAÇÃO (TOKEN JWT REMOVIDA)
+# 2. ROTA DE AUTENTICAÇÃO (LOGIN DO CLIENTE)
 # ====================================================================
+@app.post("/token", response_model=schemas.Token, tags=["Auth (Cliente)"])
+def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(database.get_db)):
+    """ 
+    Autentica um usuário (Cliente) e retorna um JWT Access Token. 
+    (Usado pelo Frontend)
+    """
+    user = crud.get_user_by_email(db, email=form_data.username)
+    
+    if not user or not security.verify_password(form_data.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
+        
+    access_token_expires = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60)))
+    
+    access_token = security.create_access_token(
+        data={"email": user.email, "role": user.role, "client_id": user.client_id},
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 # ====================================================================
 # 3. ENDPOINT DE SETUP (CRIAÇÃO DO PRIMEIRO ADMIN)
 # ====================================================================
-@app.post("/setup/initial-user", response_model=schemas.User, tags=["Setup"])
+@app.post("/setup/initial-user", response_model=schemas.User, tags=["Setup (Super Admin)"])
 def create_initial_admin(db: Session = Depends(database.get_db)):
     """ 
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
@@ -86,14 +137,14 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     if crud.get_clients(db, limit=1):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O setup já foi executado. Clientes/Usuários devem ser criados via rotas CRUD."
+            detail="O setup já foi executado."
         )
 
     client_data = schemas.ClientCreate(name="Deltabots Internal", status="Active")
     db_client = crud.create_client(db, client_data)
     
     superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br").strip()
-    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") # Senha curta padrão
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025")
     
     user_data = schemas.UserCreate(
         email=superadmin_email,
@@ -111,85 +162,79 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 
 
 # ====================================================================
-# 4. ROTAS DE GESTÃO DE CLIENTES (Atualizadas para a nova dependência)
+# 4. ROTAS DE GESTÃO DE CLIENTES (Super Admin)
 # ====================================================================
-@app.post("/clients/", response_model=schemas.Client, tags=["Gestão: Clientes"])
+@app.post("/clients/", response_model=schemas.Client, tags=["Gestão (Super Admin)"])
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO: Usa a nova dependência que não retorna usuário
-    is_admin: Annotated[bool, Depends(verify_api_key)] = False 
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
-    """ Cria um novo cliente (Disponível apenas para Super Admin). """
+    """ Cria um novo cliente (Apenas Super Admin com X-API-Key). """
     db_client = crud.create_client(db, client=client)
     return db_client
 
-@app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
+@app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão (Super Admin)"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 # CORREÇÃO: Usa a nova dependência que não retorna usuário
-                 is_admin: Annotated[bool, Depends(verify_api_key)] = False
+                 admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
-    """ Lista todos os clientes (Acesso por API Key). """
-    
-    # Como não temos mais o 'user.role', assumimos que a chave verificada é de Admin
+    """ Lista todos os clientes (Apenas Super Admin com X-API-Key). """
     clients = crud.get_clients(db, skip=skip, limit=limit)
     return clients
 
 # ====================================================================
-# 5. ROTAS DE GESTÃO DE ROBÔS RPA (Atualizadas)
+# 5. ROTAS DE GESTÃO DE ROBÔS RPA (Super Admin)
 # ====================================================================
 
-@app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
+@app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão (Super Admin)"])
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    is_admin: Annotated[bool, Depends(verify_api_key)] = False
+    admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
-    """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
+    """ Cria um novo robô (Apenas Super Admin com X-API-Key). """
     db_bot = crud.create_bot(db, bot=bot)
     return db_bot
 
-@app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
+@app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão (Super Admin)"])
 def read_bot_by_code(code: str, 
                      db: Session = Depends(database.get_db), 
-                     is_admin: Annotated[bool, Depends(verify_api_key)] = False
+                     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
-    """ Busca um robô pelo código (Rastreabilidade). """
-    
+    """ Busca um robô pelo código (Apenas Super Admin com X-API-Key). """
     bot = crud.get_bot_by_code(db, code=code)
-    
     if bot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robô não encontrado")
-        
-    # NOTA: A lógica de permissão por cliente foi removida, 
-    # pois não temos mais o objeto 'user' para verificar o client_id.
-    # Assumimos que a chave dá acesso a tudo.
-        
     return bot
 
 # ====================================================================
-# 6. ROTA DE CONSULTA DE LOGS EXTERNA (Atualizada)
+# 6. ROTA DE CONSULTA DE LOGS (Frontend do Cliente)
 # ====================================================================
 
-@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA"])
+@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA (Cliente)"])
 def get_rpa_logs(
     robo_codigo: str, 
     data_inicio: Optional[str] = None, 
     data_fim: Optional[str] = None,
     db: Session = Depends(database.get_db), 
-    is_admin: Annotated[bool, Depends(verify_api_key)] = False
+    # Protegido: Autentica com JWT (Token de Login do Cliente)
+    user: Annotated[models.User, Depends(get_current_user_by_jwt)] = None 
 ):
     """ 
     Consulta logs na API Externa de Logs (Flask/MongoDB). 
-    Requer autenticação de API Key e verifica a permissão do robô.
+    Requer autenticação JWT de cliente e verifica a permissão do robô.
     """
     
-    # 1. VERIFICAR PERMISSÃO DE CLIENTE (Lógica removida, pois 'is_admin' é True)
+    # 1. VERIFICAR PERMISSÃO DE CLIENTE
+    if user.role != 'superadmin':
+        bot = crud.get_bot_by_code(db, code=robo_codigo)
+        if not bot or bot.client_id != user.client_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
 
-    # 2. PREPARAR CHAMADA EXTERNA
+    # 2. PREPARAR CHAMADA EXTERNA (A API de Gestão chama a API de Logs)
     base_url = os.getenv("LOG_API_BASE_URL")
-    api_key = os.getenv("LOG_API_KEY")
+    api_key = os.getenv("LOG_API_KEY") # A chave permanente da API de Logs
     endpoint = f"{base_url}/logs" 
     
     params = {"robo_codigo": robo_codigo}
