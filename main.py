@@ -114,6 +114,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
     """
     if crud.get_clients(db, limit=1):
+        # Verifica se já existe um cliente, impedindo a execução
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="O setup já foi executado. Clientes/Usuários devem ser criados via rotas CRUD."
@@ -123,7 +124,8 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     db_client = crud.create_client(db, client_data)
     
     superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
-    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "SuperSecurePassword123!")
+    # SENHA CURTA AQUI: Altera o valor padrão para evitar o erro de 72 bytes
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") 
     
     user_data = schemas.UserCreate(
         email=superadmin_email,
