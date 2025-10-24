@@ -1,8 +1,10 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-psycopg2-binary # Driver PostgreSQL
+psycopg2-binary
 python-dotenv
 pydantic[email]
-passlib[bcrypt] # Para hashing de senha
-requests # Para consumir a API de Logs (futuramente)
+passlib[bcrypt]
+requests
+# CORREÇÃO: Mudar a linha para o formato exato que o pip entende
+python-jose[cryptography]
