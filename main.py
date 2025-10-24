@@ -7,24 +7,22 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
+import requests # NOVO: Para fazer chamadas à API de Logs
 
 from app import models, schemas, crud, database, security
-from app.database import engine # Importa o engine para usar nos metadados
+from app.database import engine 
 
 # Carrega variáveis de ambiente
 load_dotenv()
 
 # ====================================================================
 # CORREÇÃO CRÍTICA DE ORM: Forçar o carregamento de metadados no início
-# Isso resolve o erro 'NoReferencedTableError' em ambientes de deploy.
 # ====================================================================
 try:
     print("Tentando carregar metadados do DB...")
-    # Tenta carregar todos os modelos definidos no 'Base' do SQLAlchemy
     models.Base.metadata.create_all(bind=engine, checkfirst=True)
     print("Metadados carregados com sucesso.")
 except Exception as e:
-    # Se falhar, é geralmente um erro de conexão. O app deve continuar, mas as rotas DB falharão.
     print(f"AVISO: Falha ao carregar metadados do ORM (Pode ser ignorado se as tabelas já existirem): {e}")
 # ====================================================================
 
@@ -114,7 +112,6 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
     """
     if crud.get_clients(db, limit=1):
-        # Verifica se já existe um cliente, impedindo a execução
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="O setup já foi executado. Clientes/Usuários devem ser criados via rotas CRUD."
@@ -124,8 +121,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     db_client = crud.create_client(db, client_data)
     
     superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
-    # SENHA CURTA AQUI: Altera o valor padrão para evitar o erro de 72 bytes
-    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") 
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") # Senha curta padrão
     
     user_data = schemas.UserCreate(
         email=superadmin_email,
@@ -198,3 +194,64 @@ def read_bot_by_code(code: str,
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: O robô não pertence ao seu cliente.")
         
     return bot
+
+# ====================================================================
+# 6. ROTA DE CONSULTA DE LOGS EXTERNA (NOVO)
+# ====================================================================
+
+@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA"])
+def get_rpa_logs(
+    robo_codigo: str, 
+    data_inicio: Optional[str] = None, 
+    data_fim: Optional[str] = None,
+    db: Session = Depends(database.get_db), 
+    user: Annotated[models.User, Depends(get_current_user)] = None
+):
+    """ 
+    Consulta logs na API Externa de Logs (Flask/MongoDB). 
+    Requer autenticação JWT e verifica a permissão de acesso ao robô.
+    """
+    
+    # 1. VERIFICAR PERMISSÃO DE CLIENTE
+    # Se não for admin, verifica se o código do robô pertence a este cliente
+    if user.role != 'superadmin':
+        bot = crud.get_bot_by_code(db, code=robo_codigo)
+        if not bot or bot.client_id != user.client_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
+
+    # 2. PREPARAR CHAMADA EXTERNA
+    base_url = os.getenv("LOG_API_BASE_URL")
+    api_key = os.getenv("LOG_API_KEY")
+    endpoint = f"{base_url}/logs" 
+    
+    params = {"robo_codigo": robo_codigo}
+    if data_inicio:
+        params["data_inicio"] = data_inicio
+    if data_fim:
+        params["data_fim"] = data_fim
+
+    headers = {
+        "X-API-Key": api_key,
+        "Accept": "application/json"
+    }
+
+    try:
+        response = requests.get(endpoint, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            return response.json()
+        
+        # Trata erro 403/401 da API Externa
+        if response.status_code in [401, 403]:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, 
+                                detail="Falha na autenticação da API de Logs (Verifique LOG_API_KEY).")
+        
+        # Trata outros erros
+        response.raise_for_status() 
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+                            detail=f"Falha de conexão com a API de Logs: {e}")
+
+    # Retorno padrão de erro (nunca deve ser atingido)
+    raise HTTPException(status_code=response.status_code, detail="Erro desconhecido na API de Logs")
