@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, func
-from sqlalchemy.orm import relationship
+# Importa relationship, mas não o usa mais nas classes
+from sqlalchemy.orm import relationship 
 from .database import Base
 
 # ====================================================================
@@ -7,7 +8,7 @@ from .database import Base
 # ====================================================================
 class Client(Base):
     __tablename__ = "clients"
-    __table_args__ = {'schema': 'public'} # FORÇA O ESQUEMA PUBLIC
+    __table_args__ = {'schema': 'public'} 
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
@@ -16,17 +17,13 @@ class Client(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
-    users = relationship("User", back_populates="client") 
-    bots = relationship("RpaBot", back_populates="client") 
-    api_keys = relationship("ApiKey", back_populates="client") 
-
 
 # ====================================================================
 # 2. USER MODEL
 # ====================================================================
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'schema': 'public'} # FORÇA O ESQUEMA PUBLIC
+    __table_args__ = {'schema': 'public'}
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -34,14 +31,12 @@ class User(Base):
     password = Column(String(255), nullable=False) 
     role = Column(String(50), default="client_admin", nullable=False)
     
-    # Reverte para nome simples da tabela, confiando em __table_args__
+    # Mantém a Foreign Key para integridade do DB
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True) 
     
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-
-    client = relationship("Client", back_populates="users", foreign_keys="[User.client_id]") 
 
 
 # ====================================================================
@@ -52,10 +47,7 @@ class RpaBot(Base):
     __table_args__ = {'schema': 'public'} 
 
     id = Column(Integer, primary_key=True, index=True)
-    
-    # Reverte para nome simples da tabela, confiando em __table_args__
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False) 
-    
     code = Column(String(50), unique=True, nullable=False)
     description = Column(Text, nullable=True)
     system_target = Column(String(100), nullable=True)
@@ -63,8 +55,6 @@ class RpaBot(Base):
     last_successful_run_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-
-    client = relationship("Client", back_populates="bots")
 
 
 # ====================================================================
@@ -76,14 +66,9 @@ class ApiKey(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     key_value = Column(String(255), unique=True, nullable=False)
-    
-    # Reverte para nome simples da tabela, confiando em __table_args__
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True) 
-    
     purpose = Column(String(100), nullable=False)
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-    
-    client = relationship("Client", back_populates="api_keys")
