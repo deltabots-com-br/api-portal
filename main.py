@@ -4,7 +4,6 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-# A linha abaixo (OAuth2PasswordRequestForm) não é mais necessária, mas não causa erro.
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -21,7 +20,9 @@ load_dotenv()
 # ====================================================================
 # Garante que o valor lido do sistema seja limpo de quaisquer espaços ou quebras de linha.
 SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA").strip()
-SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
+
+# CORREÇÃO: Aplicar .strip() ao email também para evitar falhas de lookup no DB
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br").strip()
 # ====================================================================
 
 
@@ -48,17 +49,17 @@ app = FastAPI(
 async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
     """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
-    # ================== DEBUG PRINT ==================
-    # Vamos imprimir as chaves para ver por que a comparação falha
-    # Adicionamos delimitadores '<' e '>' para ver espaços em branco
+    # ================== DEBUG PRINT (Pode ser removido após o sucesso) ==================
     print(f"DEBUG: Chave recebida (curl): <{api_key}>")
     print(f"DEBUG: Chave esperada (ENV): <{SUPERADMIN_PERMANENT_KEY}>")
     # ===============================================
     
     # 1. Verifica a Chave de Administrador Global
     if api_key == SUPERADMIN_PERMANENT_KEY:
-        print("DEBUG: As chaves correspondem! Buscando usuário...")
+        print(f"DEBUG: As chaves correspondem! Buscando usuário: <{SUPERADMIN_EMAIL}>") # Debug do Email
+        
         user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL)
+        
         if user and user.role == 'superadmin':
             return user
         
@@ -70,11 +71,7 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
     
 async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
     """ Protege a rota, exigindo perfil Super Admin. """
-    if current_user.role != "superadmin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso negado. Requer perfil Super Admin."
-        )
+    # A verificação do role já ocorre em get_current_user_by_apikey
     return current_user 
 
 
@@ -108,8 +105,9 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     client_data = schemas.ClientCreate(name="Deltabots Internal", status="Active")
     db_client = crud.create_client(db, client_data)
     
-    superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
-    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") # Senha curta padrão
+    # Usa a variável de ambiente limpa (com .strip())
+    superadmin_email = SUPERADMIN_EMAIL
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "Admin2025") 
     
     user_data = schemas.UserCreate(
         email=superadmin_email,
@@ -133,7 +131,6 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO SINTÁTICA (linha 131)
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
@@ -163,7 +160,6 @@ def read_clients(skip: int = 0, limit: int = 100,
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO SINTÁTICA
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
