@@ -1,10 +1,7 @@
-# app/security.py (Simplificado)
-
 import os
+from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import hashlib
-import secrets # Para geração de salts
 
 from jose import JWTError, jwt
 from dotenv import load_dotenv
@@ -16,27 +13,46 @@ SECRET_KEY = os.getenv("SECRET_KEY", "chave_secreta_default_insegura")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 
-# --- Funções de Hashing de Senha (USANDO PADRÃO SHA-256 PARA SETUP) ---
-# NOTE: O hash é o que será armazenado no DB.
-# Vamos usar SHA-256 + salt.
-def hash_password(password: str) -> str:
-    """ Cria um hash simples (para o setup inicial) """
-    salt = secrets.token_hex(16)
-    hashed = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
-    return f"{salt}:{hashed}"
+# Define o algoritmo de hashing de senha
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def verify_password(plain_password: str, stored_hash: str) -> bool:
-    """ Verifica a senha hashada (salt:hash) """
-    try:
-        salt, stored_hashed_password = stored_hash.split(':')
-        new_hash = hashlib.sha256((plain_password + salt).encode('utf-8')).hexdigest()
-        return new_hash == stored_hashed_password
-    except ValueError:
-        return False
+# --- Lógica de Truncamento (Correção do ValueError) ---
+BCRYPT_MAX_LENGTH = 72 
 
-# --- Funções de Token JWT (Sem Alterações) ---
+def _truncate_password(password: str) -> str:
+    """ 
+    Trunca a senha em bytes para garantir que não exceda o limite do bcrypt (72 bytes).
+    """
+    # Codifica para bytes, trunca, e decodifica de volta para string
+    return password.encode('utf-8')[:BCRYPT_MAX_LENGTH].decode('utf-8', 'ignore')
+
+# --- Funções de Hashing de Senha ---
+
+def verify_password(plain_password, hashed_password):
+    """ Verifica se a senha em texto puro corresponde ao hash armazenado. """
+    
+    # CRÍTICO: Limpa o hash lido do banco de dados (remove espaços, \n)
+    hashed_password = hashed_password.strip() 
+
+    # Trunca a senha de entrada antes de verificar o hash
+    plain_password = _truncate_password(plain_password)
+    
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    """ Retorna o hash bcrypt de uma senha em texto puro. """
+    
+    # Aplica .strip() na entrada antes de hash, por segurança
+    password = password.strip()
+    
+    # APLICAR TRUNCAMENTO ANTES DO HASHING
+    password = _truncate_password(password)
+    return pwd_context.hash(password)
+
+# --- Funções de Token JWT ---
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    # ... (JWT code remains the same)
+    """ Cria um novo JWT Access Token. """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -48,7 +64,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def decode_access_token(token: str):
-    # ... (JWT code remains the same)
+    """ Decodifica e valida um JWT Access Token. """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
