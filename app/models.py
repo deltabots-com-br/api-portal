@@ -7,7 +7,7 @@ from .database import Base
 # ====================================================================
 class Client(Base):
     __tablename__ = "clients"
-    __table_args__ = {'schema': 'public'} # <-- OBRIGA O ESQUEMA PUBLIC
+    __table_args__ = {'schema': 'public'} # FORÇA O ESQUEMA PUBLIC
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
@@ -26,7 +26,7 @@ class Client(Base):
 # ====================================================================
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'schema': 'public'} # <-- OBRIGA O ESQUEMA PUBLIC
+    __table_args__ = {'schema': 'public'} # FORÇA O ESQUEMA PUBLIC
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -34,7 +34,7 @@ class User(Base):
     password = Column(String(255), nullable=False) 
     role = Column(String(50), default="client_admin", nullable=False)
     
-    # CORREÇÃO: Reverte para nome simples da tabela, confiando em __table_args__
+    # Reverte para nome simples (clients.id)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True) 
     
     is_active = Column(Boolean, default=True, nullable=False)
@@ -53,7 +53,7 @@ class RpaBot(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # CORREÇÃO: Reverte para nome simples da tabela, confiando em __table_args__
+    # Reverte para nome simples (clients.id)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False) 
     
     code = Column(String(50), unique=True, nullable=False)
@@ -77,7 +77,7 @@ class ApiKey(Base):
     id = Column(Integer, primary_key=True, index=True)
     key_value = Column(String(255), unique=True, nullable=False)
     
-    # CORREÇÃO: Reverte para nome simples da tabela, confiando em __table_args__
+    # Reverte para nome simples (clients.id)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True) 
     
     purpose = Column(String(100), nullable=False)
