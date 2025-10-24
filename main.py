@@ -4,9 +4,7 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-# A linha abaixo deve ser descomentada se você estivesse usando JWT/OAuth2. 
-# Como removemos o /token, não é estritamente necessário, mas mantemos para referência:
-# from fastapi.security import OAuth2PasswordRequestForm 
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import requests 
@@ -55,7 +53,7 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
         if user and user.role == 'superadmin':
             return user
         
-    # Se fosse para clientes, a lógica de busca na tabela api_keys viria aqui.
+    # Implementar lógica para chaves de clientes aqui, se necessário
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,6 +62,11 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
     
 async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
     """ Protege a rota, exigindo perfil Super Admin. """
+    if current_user.role != "superadmin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Requer perfil Super Admin."
+        )
     return current_user 
 
 
@@ -122,7 +125,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO SINTÁTICA
+    # CORREÇÃO: Adicionado '= None' para resolver o SyntaxError
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
@@ -152,7 +155,7 @@ def read_clients(skip: int = 0, limit: int = 100,
 def create_rpa_bot(
     bot: schemas.RpaBotCreate, 
     db: Session = Depends(database.get_db),
-    # CORREÇÃO SINTÁTICA
+    # CORREÇÃO: Adicionado '= None' para resolver o SyntaxError
     admin: Annotated[models.User, Depends(is_super_admin)] = None
 ):
     """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
