@@ -23,7 +23,7 @@ def _truncate_password(password: str) -> str:
     """ 
     Trunca a senha em bytes para garantir que não exceda o limite do bcrypt (72 bytes).
     """
-    # Codifica para bytes, trunca, e decodifica de volta para string
+    # Codifica para bytes, trunca, e decodifica de volta para string, ignorando erros
     return password.encode('utf-8')[:BCRYPT_MAX_LENGTH].decode('utf-8', 'ignore')
 
 # --- Funções de Hashing de Senha ---
@@ -31,7 +31,7 @@ def _truncate_password(password: str) -> str:
 def verify_password(plain_password, hashed_password):
     """ Verifica se a senha em texto puro corresponde ao hash armazenado. """
     
-    # CRÍTICO: Limpa o hash lido do banco de dados (remove espaços, \n)
+    # CRÍTICO: Limpa o hash lido do banco de dados (remove espaços, \n, etc.)
     hashed_password = hashed_password.strip() 
 
     # Trunca a senha de entrada antes de verificar o hash
