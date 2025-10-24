@@ -7,10 +7,10 @@ from .database import Base
 # ====================================================================
 class Client(Base):
     __tablename__ = "clients"
+    __table_args__ = {'schema': 'public'} # <-- CORREÇÃO AQUI
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
-    # contact_user_id é mapeado, mas o objeto User será relacionado
     contact_user_id = Column(Integer, unique=True, nullable=True) 
     status = Column(String(20), default="Active", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
@@ -27,6 +27,7 @@ class Client(Base):
 # ====================================================================
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = {'schema': 'public'} # <-- CORREÇÃO AQUI
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -47,6 +48,7 @@ class User(Base):
 # ====================================================================
 class RpaBot(Base):
     __tablename__ = "rpa_bots"
+    __table_args__ = {'schema': 'public'} # <-- CORREÇÃO AQUI
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
@@ -67,6 +69,7 @@ class RpaBot(Base):
 # ====================================================================
 class ApiKey(Base):
     __tablename__ = "api_keys"
+    __table_args__ = {'schema': 'public'} # <-- CORREÇÃO AQUI
 
     id = Column(Integer, primary_key=True, index=True)
     key_value = Column(String(255), unique=True, nullable=False)
@@ -77,8 +80,4 @@ class ApiKey(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     
-    # Relacionamentos
     client = relationship("Client", back_populates="api_keys")
-
-# OBS: Não usaremos Base.metadata.create_all(bind=engine) aqui, pois o banco de dados
-# e as tabelas já foram criadas pelas Migrations do Laravel/Script SQL.
