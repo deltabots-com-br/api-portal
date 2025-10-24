@@ -15,7 +15,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB")
 
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode=disable"
 
-# Adiciona connect_args para forçar o search_path no PostgreSQL
+# CRÍTICO: Adiciona connect_args para forçar o search_path do PostgreSQL para 'public'
 engine = create_engine(
     DATABASE_URL,
     connect_args={
