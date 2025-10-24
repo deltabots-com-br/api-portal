@@ -92,3 +92,20 @@ class Client(ClientBase):
     # Relações aninhadas (para leitura)
     users: List[User] = []
     bots: List[RpaBot] = []
+
+# app/schemas.py (Adicionado ao final do arquivo)
+# ... (restante do código schemas.py)
+
+from fastapi.security import OAuth2PasswordBearer
+
+# Esquema para o token retornado após o login
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+# Esquema para os dados contidos no token (payload)
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+# Configuração do esquema de segurança OAuth2
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
