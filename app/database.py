@@ -15,17 +15,21 @@ POSTGRES_DB = os.getenv("POSTGRES_DB")
 
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode=disable"
 
+# Adiciona connect_args para forçar o search_path no PostgreSQL
 engine = create_engine(
-    DATABASE_URL
+    DATABASE_URL,
+    connect_args={
+        "options": "-csearch_path=public"
+    }
 )
 
 # Cria a classe de sessão local
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base para os modelos (usada em app/models.py)
+# Base para os modelos
 Base = declarative_base()
 
-# Dependência para obter a sessão do DB (para injeção de dependência no FastAPI)
+# Dependência para obter a sessão do DB
 def get_db():
     db = SessionLocal()
     try:
