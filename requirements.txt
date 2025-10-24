@@ -1,16 +1,16 @@
-# requirements.txt
+# requirements.txt (Versão FINAL E CORRIGIDA)
 
 fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 python-dotenv
-pydantic # <-- Deixe pydantic simples
+pydantic # Mantemos o pacote base Pydantic
 passlib[bcrypt]
 requests
 python-jose
 cryptography
 python-multipart
 
-# CORREÇÃO: Adiciona explicitamente a biblioteca que estava faltando
+# CORREÇÃO CRÍTICA: Biblioteca de validação de email faltando
 email-validator
