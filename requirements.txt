@@ -1,15 +1,11 @@
-# requirements.txt (Versão FINAL)
-
+# requirements.txt
 fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 python-dotenv
 pydantic[email]
-passlib[bcrypt]
+# Removidos: passlib[bcrypt] e bcrypt
 requests
-python-jose
-cryptography
+python-jose[cryptography]
 python-multipart
-# NOVO: Garante que o bcrypt esteja explicitamente listado como pacote separado
-bcrypt
