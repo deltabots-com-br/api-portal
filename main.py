@@ -4,7 +4,7 @@ import os
 from typing import Annotated, List, Optional
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
-# REMOVIDO: from fastapi.security import OAuth2PasswordRequestForm
+# REMOVIDO: Importações JWT/OAuth2
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import requests 
@@ -18,8 +18,9 @@ load_dotenv()
 # ====================================================================
 # CRÍTICO: Variáveis de Chave Permanente
 # ====================================================================
+# A chave de API permanente deve ser inserida nas ENVs do EasyPanel
 SUPERADMIN_PERMANENT_KEY = os.getenv("SUPERADMIN_PERMANENT_KEY", "SUA_CHAVE_SUPER_SECRETA")
-SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL")
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@deltabots.com.br")
 # ====================================================================
 
 
@@ -46,13 +47,13 @@ app = FastAPI(
 async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api_key_header)], db: Session = Depends(database.get_db)):
     """ Autentica o usuário pelo X-API-Key (Token Permanente). """
     
-    # Verifica a Chave de Administrador Global
+    # 1. Verifica a Chave de Administrador Global
     if api_key == SUPERADMIN_PERMANENT_KEY:
         user = crud.get_user_by_email(db, email=SUPERADMIN_EMAIL)
         if user and user.role == 'superadmin':
             return user
         
-    # Implementar lógica para chaves de clientes aqui, se necessário
+    # Se fosse para clientes (API Keys na tabela api_keys), a lógica seria aqui
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -61,7 +62,11 @@ async def get_current_user_by_apikey(api_key: Annotated[str, Depends(schemas.api
     
 async def is_super_admin(current_user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
     """ Protege a rota, exigindo perfil Super Admin. """
-    # A verificação já foi feita no get_current_user_by_apikey
+    if current_user.role != "superadmin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Requer perfil Super Admin."
+        )
     return current_user 
 
 
@@ -74,9 +79,10 @@ def read_root():
 
 
 # ====================================================================
-# 2. ROTA DE AUTENTICAÇÃO (LOGIN) - REMOVIDA
+# 2. ROTA DE AUTENTICAÇÃO (TOKEN JWT REMOVIDA)
 # ====================================================================
-# REMOVIDA A ROTA /token
+# ROTA /token foi removida em favor da autenticação por API Key (X-API-Key)
+
 
 # ====================================================================
 # 3. ENDPOINT DE SETUP (CRIAÇÃO DO PRIMEIRO ADMIN)
@@ -86,6 +92,7 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
     """ 
     Cria um usuário superadmin inicial e o cliente interno (RODE APENAS UMA VEZ!).
     """
+    # Esta é a lógica que estava retornando 400 Bad Request
     if crud.get_clients(db, limit=1):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -120,7 +127,8 @@ def create_initial_admin(db: Session = Depends(database.get_db)):
 def create_client(
     client: schemas.ClientCreate, 
     db: Session = Depends(database.get_db),
-    admin: Annotated[models.User, Depends(is_super_admin)]
+    # Protegido: Apenas Super Admin pode criar
+    admin: Annotated[models.User, Depends(is_super_admin)] 
 ):
     """ Cria um novo cliente (Disponível apenas para Super Admin). """
     db_client = crud.create_client(db, client=client)
@@ -129,15 +137,104 @@ def create_client(
 @app.get("/clients/", response_model=List[schemas.Client], tags=["Gestão: Clientes"])
 def read_clients(skip: int = 0, limit: int = 100, 
                  db: Session = Depends(database.get_db), 
-                 user: Annotated[models.User, Depends(get_current_user_by_apikey)]):
-    """ Lista todos os clientes (Acesso por API Key). """
+                 # Protegido: Autentica com API Key
+                 user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+):
+    """ Lista todos os clientes (Super Admin vê todos, outros perfis só veem seus dados). """
     
     if user.role == 'superadmin':
         clients = crud.get_clients(db, skip=skip, limit=limit)
     else:
-        # Se for autenticado via API Key, mas não for o Super Admin (lógica futura)
-        clients = [] 
+        # Se for autenticado (Client Admin), retorna apenas o seu cliente
+        client = crud.get_client(db, client_id=user.client_id)
+        clients = [client] if client else []
         
     return clients
 
-# ... (Restante das rotas de robôs) ...
+# ====================================================================
+# 5. ROTAS DE GESTÃO DE ROBÔS RPA
+# ====================================================================
+
+@app.post("/bots/", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
+def create_rpa_bot(
+    bot: schemas.RpaBotCreate, 
+    db: Session = Depends(database.get_db),
+    admin: Annotated[models.User, Depends(is_super_admin)] 
+):
+    """ Cria um novo robô e o associa a um cliente (Disponível apenas para Super Admin). """
+    db_bot = crud.create_bot(db, bot=bot)
+    return db_bot
+
+@app.get("/bots/code/{code}", response_model=schemas.RpaBot, tags=["Gestão: Robôs"])
+def read_bot_by_code(code: str, 
+                     db: Session = Depends(database.get_db), 
+                     user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+):
+    """ Busca um robô pelo código (Rastreabilidade). """
+    
+    bot = crud.get_bot_by_code(db, code=code)
+    
+    if bot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robô não encontrado")
+        
+    if user.role != 'superadmin' and bot.client_id != user.client_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: O robô não pertence ao seu cliente.")
+        
+    return bot
+
+# ====================================================================
+# 6. ROTA DE CONSULTA DE LOGS EXTERNA
+# ====================================================================
+
+@app.get("/logs/transactions", response_model=schemas.RpaLogResponse, tags=["Logs RPA"])
+def get_rpa_logs(
+    robo_codigo: str, 
+    data_inicio: Optional[str] = None, 
+    data_fim: Optional[str] = None,
+    db: Session = Depends(database.get_db), 
+    user: Annotated[models.User, Depends(get_current_user_by_apikey)] 
+):
+    """ 
+    Consulta logs na API Externa de Logs (Flask/MongoDB). 
+    Requer autenticação de API Key e verifica a permissão do robô.
+    """
+    
+    # 1. VERIFICAR PERMISSÃO DE CLIENTE
+    if user.role != 'superadmin':
+        bot = crud.get_bot_by_code(db, code=robo_codigo)
+        if not bot or bot.client_id != user.client_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao código do robô.")
+
+    # 2. PREPARAR CHAMADA EXTERNA
+    base_url = os.getenv("LOG_API_BASE_URL")
+    api_key = os.getenv("LOG_API_KEY")
+    endpoint = f"{base_url}/logs" 
+    
+    params = {"robo_codigo": robo_codigo}
+    if data_inicio:
+        params["data_inicio"] = data_inicio
+    if data_fim:
+        params["data_fim"] = data_fim
+
+    headers = {
+        "X-API-Key": api_key,
+        "Accept": "application/json"
+    }
+
+    try:
+        response = requests.get(endpoint, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            return response.json()
+        
+        if response.status_code in [401, 403]:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, 
+                                detail="Falha na autenticação da API de Logs (Verifique LOG_API_KEY).")
+        
+        response.raise_for_status() 
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+                            detail=f"Falha de conexão com a API de Logs: {e}")
+
+    raise HTTPException(status_code=response.status_code, detail="Erro desconhecido na API de Logs")
