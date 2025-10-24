@@ -1,4 +1,4 @@
-# requirements.txt
+# requirements.txt (Versão FINAL)
 
 fastapi
 uvicorn[standard]
@@ -10,5 +10,6 @@ passlib[bcrypt]
 requests
 python-jose
 cryptography
-# NOVO: Necessário para processar o formulário de login (OAuth2PasswordRequestForm)
 python-multipart
+# NOVO: Garante que o bcrypt esteja explicitamente listado como pacote separado
+bcrypt
