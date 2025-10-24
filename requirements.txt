@@ -1,3 +1,5 @@
+# requirements.txt
+
 fastapi
 uvicorn[standard]
 sqlalchemy
@@ -6,5 +8,7 @@ python-dotenv
 pydantic[email]
 passlib[bcrypt]
 requests
-# CORREÇÃO: Mudar a linha para o formato exato que o pip entende
-python-jose[cryptography]
+python-jose
+cryptography
+# NOVO: Necessário para processar o formulário de login (OAuth2PasswordRequestForm)
+python-multipart
